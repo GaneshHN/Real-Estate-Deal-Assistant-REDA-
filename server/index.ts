@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express, { type ErrorRequestHandler } from 'express'
 import cors from 'cors'
+import { getRole, requireAuth, requireRole, type AuthenticatedRequest } from './auth'
 
 const app = express()
 const port = Number(process.env.PORT) || 5000
@@ -15,6 +16,18 @@ app.use((request, _response, next) => {
 
 app.get('/api/health', (_request, response) => {
   response.json({ success: true, service: 'real-estate-api' })
+})
+
+app.get('/api/auth/me', requireAuth, (request: AuthenticatedRequest, response) => {
+  response.json({ success: true, user: request.user, role: request.role || getRole(request.user!) })
+})
+
+app.get('/api/protected', requireAuth, (request: AuthenticatedRequest, response) => {
+  response.json({ success: true, message: 'Protected resource', userId: request.user!.id, role: request.role })
+})
+
+app.get('/api/admin', requireAuth, requireRole('admin'), (_request, response) => {
+  response.json({ success: true, message: 'Admin resource' })
 })
 
 const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {

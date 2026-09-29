@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { getDisplayName, getUserRole, supabase, type AppRole } from './lib/supabase'
 import {
   Bell, Building2, CalendarDays, ChevronDown, CircleDollarSign, FileText,
   LayoutDashboard, Menu, MessageSquare, MoreHorizontal, Plus, Search,
@@ -22,10 +23,35 @@ const activities = [
 export function App() {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState('Overview')
+  const [session, setSession] = useState<import('@supabase/supabase-js').Session | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return }
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false) })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  async function login(event: React.FormEvent) {
+    event.preventDefault(); setError('')
+    if (!supabase) { setError('Supabase is not configured.'); return }
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInError) setError('Invalid email or password.')
+  }
+
+  async function logout() { await supabase?.auth.signOut(); setSession(null) }
+  if (loading) return <div className="auth-screen"><p>Loading your workspace…</p></div>
+  if (!session) return <Login email={email} password={password} error={error} setEmail={setEmail} setPassword={setPassword} onSubmit={login} />
+  const name = getDisplayName(session.user)
+  const role = getUserRole(session.user)
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <div className="brand"><div className="brand-mark"><Sparkles size={17} /></div><span>Dealflow</span><button className="mobile-close" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={18} /></button></div>
-      <div className="workspace"><div className="workspace-avatar">RD</div><div><strong>Rohan Desai</strong><span>Broker workspace</span></div><ChevronDown size={15} /></div>
+      <div className="workspace"><div className="workspace-avatar">{name.slice(0, 2).toUpperCase()}</div><div><strong>{name}</strong><span>{role} workspace</span></div><button className="logout-button" onClick={logout} aria-label="Log out">Log out</button></div>
       <div className="nav-section"><span className="eyebrow">Workspace</span><nav>{nav.map(item => { const Icon = item.icon; return <button key={item.label} onClick={() => { setActive(item.label); setOpen(false) }} className={`nav-item ${active === item.label ? 'active' : ''}`}><Icon size={18} /><span>{item.label}</span>{item.count && <b>{item.count}</b>}</button> })}</nav></div>
       <div className="sidebar-bottom"><button className="nav-item"><Settings size={18} /><span>Settings</span></button><div className="upgrade"><Sparkles size={17}/><div><strong>Unlock more</strong><span>Automate your workflow</span></div><ChevronDown size={14}/></div></div>
     </aside>
@@ -43,3 +69,7 @@ export function App() {
 }
 function Metric({ label, value, change, detail, icon: Icon, tone }: any) { return <div className="metric-card"><div className={`metric-icon ${tone}`}><Icon size={19}/></div><p>{label}</p><strong>{value}</strong><div className="metric-change"><span>↗ {change}</span><small>{detail}</small></div></div> }
 function Follow({ time, name, tag, tone }: any) { return <div className="followup"><span className="follow-time">{time}</span><div className="follow-info"><strong>{name}</strong><span className={`tag ${tone}`}>{tag}</span></div><button aria-label={`More options for ${name}`}><MoreHorizontal size={18}/></button></div> }
+
+function Login({ email, password, error, setEmail, setPassword, onSubmit }: { email: string; password: string; error: string; setEmail: (value: string) => void; setPassword: (value: string) => void; onSubmit: (event: React.FormEvent) => void }) {
+  return <main className="auth-screen"><form className="login-card" onSubmit={onSubmit}><div className="brand login-brand"><div className="brand-mark"><Sparkles size={17} /></div><span>Dealflow</span></div><p className="eyebrow">Broker workspace</p><h1>Welcome back</h1><p className="subtitle">Sign in to manage your real estate deals.</p><label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required /></label><label>Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></label>{error && <p className="auth-error" role="alert">{error}</p>}<button className="primary-button login-button" type="submit">Sign in</button></form></main>
+}
