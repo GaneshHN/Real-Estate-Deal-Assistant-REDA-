@@ -1,3 +1,27 @@
-Ji Shri Sita Sati Devi Daku Maha Maharaj 
 # Real-Estate-Deal-Assistant (REDA)
-Real Estate Deal Assistant is a broker-focused CRM that manages properties, leads, AI-powered property matching, follow-ups, site visits, negotiations, deals, and portal lead integrations. It helps brokers replace scattered WhatsApp, Excel, and manual workflows with one intelligent platform.
+
+A broker-focused CRM foundation for managing leads, properties, follow-ups, site visits, negotiations, and deals.
+
+## Structure
+
+- `client/` — React + Vite + TypeScript frontend
+- `server/` — Express + TypeScript API
+- `shared/` — Shared types
+- `drizzle/` — Reserved for Drizzle schema and migrations
+
+## Run locally
+
+1. Copy `.env.example` to `.env` and add your Supabase connection values.
+2. Install dependencies: `npm install`
+3. Start both apps: `npm run dev`
+4. Frontend: `http://localhost:5173`
+5. API health check: `http://localhost:5000/api/health`
+
+Individual commands: `npm run dev:client`, `npm run dev:server`.
+
+## Checks
+
+- `npm run typecheck`
+- `npm run build`
+
+No secrets are committed to the repository.
