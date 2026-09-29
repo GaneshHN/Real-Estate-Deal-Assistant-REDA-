@@ -4,6 +4,7 @@ import cors from 'cors'
 import { createClient } from '@supabase/supabase-js'
 import { getRole, requireAuth, requireRole, type AuthenticatedRequest } from './auth'
 import { findMatches, missingRequirements, type LeadRequirements } from './services/matching.service'
+import { duplicateWarning, findDuplicateMatches } from './services/duplicate.service'
 
 const app = express()
 const port = Number(process.env.PORT) || 5000
@@ -27,8 +28,57 @@ function validProperty(input: Record<string, unknown>) {
   return null
 }
 function fromDb(row: Record<string, unknown>) { return Object.fromEntries(Object.entries(row).map(([key, value]) => [key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()), value])) }
+const leadFields = ['name','phone','email','budgetMin','budgetMax','preferredLocation','propertyType','bedrooms','minArea','purpose','source','sourceLeadId','status','assignedAgentId','notes']
+function toLeadDb(input: Record<string, unknown>) { return Object.fromEntries(leadFields.filter(key => key in input).map(key => [key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`), input[key]])) }
+function validLead(input: Record<string, unknown>) { if (!String(input.name || '').trim() || !String(input.phone || '').trim()) return 'Name and phone are required.'; return null }
+async function duplicateLeads(input: Record<string, unknown>) {
+  if (!db) return { matches: [], error: 'Database is not configured' }
+  const phone = String(input.phone || '').replace(/\D/g, '')
+  const email = String(input.email || '').trim().toLowerCase()
+  const source = String(input.source || '').trim()
+  const sourceLeadId = String(input.sourceLeadId || '').trim()
+  const queries = [
+    phone ? db.from('leads').select('id,name,phone,email,source,source_lead_id,status').eq('phone', input.phone) : Promise.resolve({ data: [], error: null }),
+    email ? db.from('leads').select('id,name,phone,email,source,source_lead_id,status').ilike('email', email) : Promise.resolve({ data: [], error: null }),
+    source && sourceLeadId ? db.from('leads').select('id,name,phone,email,source,source_lead_id,status').eq('source', source).eq('source_lead_id', sourceLeadId) : Promise.resolve({ data: [], error: null }),
+  ]
+  const results = await Promise.all(queries)
+  const error = results.find(result => result.error)?.error
+  if (error) return { matches: [], error: error.message }
+  const rows = new Map<string, Record<string, unknown>>()
+  results.flatMap(result => result.data || []).forEach(row => rows.set(String(row.id), row))
+  return { matches: findDuplicateMatches(input, [...rows.values()].map(fromDb) as never[]), error: null }
+}
 
 app.get('/api/health', (_request, response) => response.json({ success: true, service: 'real-estate-api' }))
+app.post('/api/leads', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => {
+  const input = request.body as Record<string, unknown>
+  const errorMessage = validLead(input)
+  if (errorMessage) return response.status(400).json({ success: false, error: errorMessage })
+  if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
+  const duplicateResult = await duplicateLeads(input)
+  if (duplicateResult.error) return response.status(500).json({ success: false, error: duplicateResult.error })
+  if (duplicateResult.matches.length && input.confirmDuplicate !== true) return response.status(409).json({ success: false, warning: duplicateWarning, existingLeads: duplicateResult.matches.map(match => ({ ...fromDb(match.lead), matchedOn: match.matchedOn })), actions: ['review_existing_lead', 'continue_creating_new_lead'] })
+  const { data, error } = await db.from('leads').insert(toLeadDb(input)).select().single()
+  if (error) return response.status(400).json({ success: false, error: error.message })
+  response.status(201).json({ success: true, data: fromDb(data) })
+})
+app.post('/api/leads/import', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => {
+  const leads = Array.isArray(request.body?.leads) ? request.body.leads : []
+  if (!leads.length) return response.status(400).json({ success: false, error: 'Provide a non-empty leads array.' })
+  const results = []
+  for (const lead of leads) {
+    const input = lead as Record<string, unknown>
+    const errorMessage = validLead(input)
+    if (errorMessage) { results.push({ success: false, error: errorMessage, input }); continue }
+    const duplicateResult = await duplicateLeads(input)
+    if (duplicateResult.error) return response.status(500).json({ success: false, error: duplicateResult.error })
+    if (duplicateResult.matches.length && input.confirmDuplicate !== true) { results.push({ success: false, warning: duplicateWarning, existingLeads: duplicateResult.matches.map(match => ({ ...fromDb(match.lead), matchedOn: match.matchedOn })), actions: ['review_existing_lead', 'continue_creating_new_lead'], input }); continue }
+    const { data, error } = await db!.from('leads').insert(toLeadDb(input)).select().single()
+    results.push(error ? { success: false, error: error.message, input } : { success: true, data: fromDb(data) })
+  }
+  response.status(200).json({ success: true, results })
+})
 app.get('/api/auth/me', requireAuth, (request: AuthenticatedRequest, response) => response.json({ success: true, user: request.user, role: request.role || getRole(request.user!) }))
 app.get('/api/properties', requireAuth, async (request: AuthenticatedRequest, response) => {
   if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })

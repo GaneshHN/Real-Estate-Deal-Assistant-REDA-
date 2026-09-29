@@ -30,6 +30,8 @@ export type Property = {
 }
 
 export type PropertyInput = Omit<Property, 'id' | 'leads' | 'siteVisits' | 'createdAt' | 'updatedAt'>
-export type Lead = { id: string; name: string; propertyType?: PropertyType | null; preferredLocation?: string | null; budgetMax?: number | null; minArea?: number | null }
+export type Lead = { id: string; name: string; phone?: string | null; email?: string | null; source?: string | null; sourceLeadId?: string | null; status?: string | null; propertyType?: PropertyType | null; preferredLocation?: string | null; budgetMax?: number | null; minArea?: number | null }
+export type DuplicateLeadWarning = { message: string; existingLeads: Array<Pick<Lead, 'id' | 'name' | 'phone' | 'email' | 'source' | 'status'> & { matchedOn: string[] }> }
+
 export type HealthResponse = { success: boolean; service: string }
 export type ApiResponse<T> = { success: boolean; data?: T; error?: string; pagination?: { page: number; pageSize: number; total: number } }
