@@ -34,4 +34,9 @@ export type Lead = { id: string; name: string; phone?: string | null; email?: st
 export type DuplicateLeadWarning = { message: string; existingLeads: Array<Pick<Lead, 'id' | 'name' | 'phone' | 'email' | 'source' | 'status'> & { matchedOn: string[] }> }
 
 export type HealthResponse = { success: boolean; service: string }
+export type SiteVisitStatus = 'Scheduled' | 'Completed' | 'Cancelled' | 'Rescheduled' | 'No Show'
+export type FollowUpPriority = 'Low' | 'Medium' | 'High'
+export type FollowUpStatus = 'Pending' | 'Completed' | 'Cancelled'
+export type SiteVisit = { id: string; leadId: string; propertyId: string; agentId?: string | null; scheduledAt: string; status: SiteVisitStatus; feedback?: string | null; outcome?: string | null; nextAction?: string | null; lead?: Lead; property?: Property; createdAt?: string; updatedAt?: string }
+export type FollowUp = { id: string; leadId: string; agentId?: string | null; dueAt: string; priority: FollowUpPriority; note: string; status: FollowUpStatus; lead?: Lead; createdAt?: string; updatedAt?: string }
 export type ApiResponse<T> = { success: boolean; data?: T; error?: string; pagination?: { page: number; pageSize: number; total: number } }
