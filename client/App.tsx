@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getDisplayName, getUserRole, supabase } from './lib/supabase'
 import type { Property, PropertyInput } from '../shared/types'
+import { MatchingPage } from './MatchingPage'
 import { Building2, ChevronLeft, Filter, LogOut, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 
 const empty: PropertyInput = { title:'', propertyType:'Apartment', listingType:'Sale', location:'', city:'', area:0, bedrooms:0, bathrooms:0, floor:null, totalFloors:null, price:0, description:'', amenities:[], ownerName:'', ownerPhone:'', ownerEmail:'', assignedAgent:'', status:'Available', lastVerifiedAt:new Date().toISOString().slice(0,10) }
@@ -13,6 +14,8 @@ export function App() {
   useEffect(()=>{ if(!supabase){setLoading(false);return}; supabase.auth.getSession().then(({data})=>{setSession(data.session);setLoading(false)}); const {data}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s)); return ()=>data.subscription.unsubscribe() },[])
   if(loading) return <div className="center-state">Loading workspace…</div>
   if(!session) return <Login error={error} setError={setError}/>
+  const matchingPath = window.location.pathname.match(/^\/matching\/([^/]+)$/)
+  if (matchingPath) return <MatchingPage leadId={matchingPath[1]} />
   return <PropertyManager session={session} onLogout={async()=>{await supabase?.auth.signOut();setSession(null)}}/>
 }
 function Login({error,setError}:{error:string;setError:(value:string)=>void}) { const [email,setEmail]=useState('');const [password,setPassword]=useState(''); async function submit(e:React.FormEvent){e.preventDefault();if(!supabase)return setError('Supabase is not configured.');const {error}=await supabase.auth.signInWithPassword({email,password});if(error)setError('Invalid email or password.')} return <main className="auth-screen"><form className="login-card" onSubmit={submit}><div className="brand"><Building2 size={20}/> Dealflow</div><p className="eyebrow">Property management</p><h1>Welcome back</h1><p className="muted">Sign in to manage your real estate inventory.</p><label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<p className="error">{error}</p>}<button className="primary" type="submit">Sign in</button></form></main> }

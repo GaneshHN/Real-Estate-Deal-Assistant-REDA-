@@ -1,0 +1,16 @@
+import { useEffect, useState } from 'react'
+import type { Lead, Property } from '../shared/types'
+import { supabase } from './lib/supabase'
+
+type Match = { property: Property; score: number; reasons: string[] }
+type Payload = { lead: Lead; missingRequirements: string[]; matches: Match[] }
+
+export function MatchingPage({ leadId }: { leadId: string }) {
+  const [data, setData] = useState<Payload | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { supabase?.auth.getSession().then(async ({ data: session }) => { const token = session.session?.access_token; const response = await fetch(`/api/matches/${leadId}`, { headers: { Authorization: `Bearer ${token}` } }); const body = await response.json(); if (!response.ok) setError(body.error || 'Unable to load matches.'); else setData(body.data) }) }, [leadId])
+  if (error) return <main className="page"><div className="error-box">{error}</div></main>
+  if (!data) return <main className="page"><div className="empty">Loading matches…</div></main>
+  return <main className="page"><p className="eyebrow">Workspace / Matching</p><h1>Property matches</h1><p className="muted">Explainable rule-based matches for {data.lead.name}.</p><section className="panel matching-requirements"><h2>Lead requirements</h2><div className="facts"><Fact label="Property type" value={data.lead.propertyType || 'Not specified'}/><Fact label="Location" value={data.lead.preferredLocation || 'Not specified'}/><Fact label="Maximum budget" value={data.lead.budgetMax ? `₹${data.lead.budgetMax.toLocaleString('en-IN')}` : 'Not specified'}/><Fact label="Minimum area" value={data.lead.minArea ? `${data.lead.minArea} sq ft` : 'Not specified'}/></div>{data.missingRequirements.length > 0 && <div className="warning-box">Missing requirements: {data.missingRequirements.join(', ')}. Scores may be incomplete.</div>}</section><section className="match-list"><h2>{data.matches.length ? `${data.matches.length} available properties` : 'No matches found'}</h2>{data.matches.length === 0 ? <div className="empty">No available properties match this lead yet.</div> : data.matches.map(match => <article className="panel match-card" key={match.property.id}><div className="match-score"><strong>{match.score}</strong><span>/ 100</span></div><div className="match-content"><p className="eyebrow">{match.property.propertyType} · {match.property.listingType}</p><h3>{match.property.title}</h3><p className="muted">{match.property.location}, {match.property.city}</p><div className="match-details"><span>₹{match.property.price.toLocaleString('en-IN')}</span><span>{match.property.area} sq ft</span></div><div className="chips">{match.reasons.length ? match.reasons.map(reason => <span key={reason}>{reason}</span>) : <span>No requirements matched</span>}</div><div className="actions"><button className="secondary" onClick={() => { window.location.href = `/properties/${match.property.id}` }}>View property</button><button className="primary" onClick={() => alert('Site visit creation will be connected to the visits workflow.')}>Create site visit</button></div></div></article>)}</section></main>
+}
+function Fact({ label, value }: { label: string; value: string }) { return <div><span>{label}</span><strong>{value}</strong></div> }

@@ -3,6 +3,7 @@ import express, { type ErrorRequestHandler } from 'express'
 import cors from 'cors'
 import { createClient } from '@supabase/supabase-js'
 import { getRole, requireAuth, requireRole, type AuthenticatedRequest } from './auth'
+import { findMatches, missingRequirements, type LeadRequirements } from './services/matching.service'
 
 const app = express()
 const port = Number(process.env.PORT) || 5000
@@ -46,6 +47,16 @@ app.get('/api/properties', requireAuth, async (request: AuthenticatedRequest, re
   const { data, error, count } = await builder.order(sort[0] as string, { ascending: sort[1] as boolean }).range((page - 1) * pageSize, page * pageSize - 1)
   if (error) return response.status(500).json({ success: false, error: error.message })
   response.json({ success: true, data: (data || []).map(fromDb), pagination: { page, pageSize, total: count || 0 } })
+})
+app.get('/api/matches/:leadId', requireAuth, async (request, response) => {
+  if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
+  const { data: leadRow, error: leadError } = await db.from('leads').select('*').eq('id', request.params.leadId).single()
+  if (leadError || !leadRow) return response.status(404).json({ success: false, error: 'Lead not found' })
+  const lead = fromDb(leadRow) as LeadRequirements
+  const missing = missingRequirements(lead)
+  const { data: propertyRows, error: propertyError } = await db.from('properties').select('*').eq('status', 'Available')
+  if (propertyError) return response.status(500).json({ success: false, error: propertyError.message })
+  response.json({ success: true, data: { lead, missingRequirements: missing, matches: findMatches(lead, (propertyRows || []).map(fromDb) as never[]) } })
 })
 app.get('/api/properties/:id', requireAuth, async (request, response) => {
   if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })

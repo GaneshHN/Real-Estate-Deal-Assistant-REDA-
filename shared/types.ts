@@ -30,5 +30,6 @@ export type Property = {
 }
 
 export type PropertyInput = Omit<Property, 'id' | 'leads' | 'siteVisits' | 'createdAt' | 'updatedAt'>
+export type Lead = { id: string; name: string; propertyType?: PropertyType | null; preferredLocation?: string | null; budgetMax?: number | null; minArea?: number | null }
 export type HealthResponse = { success: boolean; service: string }
 export type ApiResponse<T> = { success: boolean; data?: T; error?: string; pagination?: { page: number; pageSize: number; total: number } }
