@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getRole, requireAuth, requireRole, type AuthenticatedRequest } from './auth'
 import { findMatches, missingRequirements, type LeadRequirements } from './services/matching.service'
 import { duplicateWarning, findDuplicateMatches } from './services/duplicate.service'
+import { canModifyDeal, dealDb, dealStages, isDealStage, propertyStatusFor, validateDeal } from './services/deal.service'
 
 const app = express()
 const port = Number(process.env.PORT) || 5000
@@ -51,6 +52,14 @@ async function duplicateLeads(input: Record<string, unknown>) {
 }
 
 app.get('/api/health', (_request, response) => response.json({ success: true, service: 'real-estate-api' }))
+app.get('/api/leads', requireAuth, async (request: AuthenticatedRequest, response) => {
+  if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
+  let query = db.from('leads').select('*').order('created_at', { ascending: false }).limit(100)
+  if (!isManager(request)) query = query.eq('assigned_agent_id', request.user!.id)
+  const { data, error } = await query
+  if (error) return response.status(500).json({ success: false, error: error.message })
+  response.json({ success: true, data: (data || []).map(fromDb) })
+})
 app.post('/api/leads', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => {
   const input = request.body as Record<string, unknown>
   const errorMessage = validLead(input)
@@ -154,6 +163,39 @@ app.get('/api/follow-ups', requireAuth, async (request: AuthenticatedRequest, re
 app.post('/api/follow-ups', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => { const input = request.body as Record<string, unknown>; const errorMessage = validFollowUp(input); if (errorMessage) return response.status(400).json({ success: false, error: errorMessage }); if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' }); const { data, error } = await db.from('follow_ups').insert(followUpDb({ ...input, agent: input.agent || request.user!.id })).select('*, lead:leads(*)').single(); if (error) return response.status(400).json({ success: false, error: error.message }); response.status(201).json({ success: true, data: fromDb(data) }) })
 app.put('/api/follow-ups/:id', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => { const input = request.body as Record<string, unknown>; const errorMessage = validFollowUp(input, true); if (errorMessage) return response.status(400).json({ success: false, error: errorMessage }); if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' }); let query = db.from('follow_ups').update(followUpDb(input)).eq('id', request.params.id); if (!isManager(request)) query = query.eq('agent_id', request.user!.id); const { data, error } = await query.select('*, lead:leads(*)').single(); if (error || !data) return response.status(error ? 400 : 404).json({ success: false, error: error?.message || 'Follow-up not found' }); response.json({ success: true, data: fromDb(data) }) })
 app.delete('/api/follow-ups/:id', requireAuth, requireRole('admin', 'broker'), async (request: AuthenticatedRequest, response) => { if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' }); const { error } = await db.from('follow_ups').delete().eq('id', request.params.id); if (error) return response.status(400).json({ success: false, error: error.message }); response.status(204).end() })
+const dealSelect = '*, lead:leads(*), property:properties(*), agent:users(id,name,email)'
+app.get('/api/deals', requireAuth, async (request: AuthenticatedRequest, response) => {
+  if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
+  let query = db.from('deals').select(dealSelect).order('created_at', { ascending: false })
+  if (!isManager(request)) query = query.eq('agent_id', request.user!.id)
+  if (request.query.stage) query = query.eq('status', request.query.stage)
+  const { data, error } = await query
+  if (error) return response.status(500).json({ success: false, error: error.message })
+  response.json({ success: true, data: (data || []).map(row => ({ ...fromDb(row), stage: row.status })) , stages: dealStages })
+})
+app.post('/api/deals', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => {
+  const input = request.body as Record<string, unknown>; const errorMessage = validateDeal(input)
+  if (errorMessage) return response.status(400).json({ success: false, error: errorMessage })
+  if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
+  const { data, error } = await db.from('deals').insert(dealDb({ ...input, stage: input.stage || 'New' }, request.user!.id)).select(dealSelect).single()
+  if (error) return response.status(400).json({ success: false, error: error.message })
+  response.status(201).json({ success: true, data: { ...fromDb(data), stage: data.status } })
+})
+app.patch('/api/deals/:id', requireAuth, requireRole(...mutableRoles), async (request: AuthenticatedRequest, response) => {
+  const input = request.body as Record<string, unknown>; const errorMessage = validateDeal(input, true)
+  if (errorMessage) return response.status(400).json({ success: false, error: errorMessage })
+  if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
+  let existingQuery = db.from('deals').select('*, property:properties(listing_type)').eq('id', request.params.id)
+  if (!isManager(request)) existingQuery = existingQuery.eq('agent_id', request.user!.id)
+  const { data: existing, error: existingError } = await existingQuery.single()
+  if (existingError || !existing) return response.status(404).json({ success: false, error: 'Deal not found' })
+  const stage = input.stage === undefined ? existing.status : input.stage
+  const propertyStatus = propertyStatusFor(stage as never, (existing.property as { listing_type?: string } | null)?.listing_type || 'Sale')
+  const { data, error } = await db.from('deals').update(dealDb({ ...input, stage })).eq('id', request.params.id).select(dealSelect).single()
+  if (error) return response.status(400).json({ success: false, error: error.message })
+  if (propertyStatus) { const propertyUpdate = await db.from('properties').update({ status: propertyStatus }).eq('id', existing.property_id); if (propertyUpdate.error) return response.status(400).json({ success: false, error: propertyUpdate.error.message }) }
+  response.json({ success: true, data: { ...fromDb(data), stage: data.status } })
+})
 app.get('/api/protected', requireAuth, (request: AuthenticatedRequest, response) => response.json({ success: true, message: 'Protected resource', userId: request.user!.id, role: request.role }))
 app.get('/api/admin', requireAuth, requireRole('admin'), (_request, response) => response.json({ success: true, message: 'Admin resource' }))
 const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => { console.error('[api] Unhandled error:', error); response.status(500).json({ success: false, error: 'Internal server error' }) }

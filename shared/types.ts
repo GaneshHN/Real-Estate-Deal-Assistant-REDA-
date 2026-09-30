@@ -39,4 +39,7 @@ export type FollowUpPriority = 'Low' | 'Medium' | 'High'
 export type FollowUpStatus = 'Pending' | 'Completed' | 'Cancelled'
 export type SiteVisit = { id: string; leadId: string; propertyId: string; agentId?: string | null; scheduledAt: string; status: SiteVisitStatus; feedback?: string | null; outcome?: string | null; nextAction?: string | null; lead?: Lead; property?: Property; createdAt?: string; updatedAt?: string }
 export type FollowUp = { id: string; leadId: string; agentId?: string | null; dueAt: string; priority: FollowUpPriority; note: string; status: FollowUpStatus; lead?: Lead; createdAt?: string; updatedAt?: string }
+export type DealStage = 'New' | 'Contacted' | 'Interested' | 'Site Visit' | 'Negotiation' | 'Booked' | 'Closed' | 'Lost'
+export type Deal = { id: string; leadId: string; propertyId: string; agentId?: string | null; dealValue: number; commission: number; commissionRate?: number; stage: DealStage; closedAt?: string | null; lead?: Lead; property?: Property; agent?: { id: string; name: string }; createdAt?: string; updatedAt?: string }
+export type DealInput = { leadId: string; propertyId: string; agentId?: string; dealValue: number; commissionRate?: number; stage?: DealStage }
 export type ApiResponse<T> = { success: boolean; data?: T; error?: string; pagination?: { page: number; pageSize: number; total: number } }

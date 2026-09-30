@@ -3,6 +3,7 @@ import { getDisplayName, getUserRole, supabase } from './lib/supabase'
 import type { Property, PropertyInput } from '../shared/types'
 import { MatchingPage } from './MatchingPage'
 import { VisitsPage } from './VisitsPage'
+import { DealsShell } from './DealsPage'
 import { Building2, ChevronLeft, Filter, LogOut, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 
 const empty: PropertyInput = { title:'', propertyType:'Apartment', listingType:'Sale', location:'', city:'', area:0, bedrooms:0, bathrooms:0, floor:null, totalFloors:null, price:0, description:'', amenities:[], ownerName:'', ownerPhone:'', ownerEmail:'', assignedAgent:'', status:'Available', lastVerifiedAt:new Date().toISOString().slice(0,10) }
@@ -17,6 +18,7 @@ export function App() {
   if(!session) return <Login error={error} setError={setError}/>
   const matchingPath = window.location.pathname.match(/^\/matching\/([^/]+)$/)
   if (matchingPath) return <MatchingPage leadId={matchingPath[1]} />
+  if (window.location.pathname === '/deals') return <DealsShell onLogout={async()=>{await supabase?.auth.signOut();setSession(null)}} />
   if (window.location.pathname === '/site-visits') return <ActivityShell session={session} onLogout={async()=>{await supabase?.auth.signOut();setSession(null)}}><VisitsPage kind="visits" /></ActivityShell>
   if (window.location.pathname === '/follow-ups') return <ActivityShell session={session} onLogout={async()=>{await supabase?.auth.signOut();setSession(null)}}><VisitsPage kind="followups" /></ActivityShell>
   return <PropertyManager session={session} onLogout={async()=>{await supabase?.auth.signOut();setSession(null)}}/>
