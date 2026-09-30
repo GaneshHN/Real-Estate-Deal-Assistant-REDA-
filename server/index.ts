@@ -17,6 +17,7 @@ app.use((request, _response, next) => { console.info(`[api] ${request.method} ${
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY
 const db = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { autoRefreshToken: false, persistSession: false } }) : null
+const adminDb = supabaseUrl && process.env.SUPABASE_SERVICE_ROLE_KEY ? createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } }) : null
 const mutableRoles = ['admin', 'broker', 'agent'] as const
 const propertyFields = ['title','propertyType','listingType','location','city','area','bedrooms','bathrooms','floor','totalFloors','price','description','amenities','ownerName','ownerPhone','ownerEmail','assignedAgent','status','lastVerifiedAt']
 function toDb(input: Record<string, unknown>) { return Object.fromEntries(propertyFields.filter(key => key in input).map(key => [key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`), input[key]])) }
@@ -88,7 +89,21 @@ app.post('/api/leads/import', requireAuth, requireRole(...mutableRoles), async (
   }
   response.status(200).json({ success: true, results })
 })
-app.get('/api/auth/me', requireAuth, (request: AuthenticatedRequest, response) => response.json({ success: true, user: request.user, role: request.role || getRole(request.user!) }))
+app.get('/api/auth/me', requireAuth, async (request: AuthenticatedRequest, response) => {
+  if (!adminDb) return response.status(503).json({ success: false, error: 'Supabase configuration is missing.' })
+  const { data, error } = await adminDb.from('users').select('id,name,email,role,created_at,updated_at').eq('id', request.user!.id).maybeSingle()
+  if (error) return response.status(500).json({ success: false, error: 'Unable to connect to database.' })
+  response.json({ success: true, user: request.user, profile: data ? fromDb(data) : null, role: data?.role || request.role || getRole(request.user!) })
+})
+app.post('/api/auth/profile', requireAuth, async (request: AuthenticatedRequest, response) => {
+  if (!adminDb) return response.status(503).json({ success: false, error: 'Supabase configuration is missing.' })
+  const name = String(request.body?.name || request.user!.user_metadata?.full_name || '').trim()
+  const role = ['admin', 'broker', 'agent'].includes(request.body?.role) ? request.body.role : 'agent'
+  if (!name) return response.status(400).json({ success: false, error: 'Full name is required.' })
+  const { data, error } = await adminDb.from('users').upsert({ id: request.user!.id, name, email: request.user!.email, role }, { onConflict: 'id' }).select('id,name,email,role,created_at,updated_at').single()
+  if (error) return response.status(400).json({ success: false, error: 'Unable to create user profile.' })
+  response.status(201).json({ success: true, data: fromDb(data) })
+})
 app.get('/api/properties', requireAuth, async (request: AuthenticatedRequest, response) => {
   if (!db) return response.status(503).json({ success: false, error: 'Database is not configured' })
   const query = request.query
